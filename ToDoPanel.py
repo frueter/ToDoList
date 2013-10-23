@@ -3,7 +3,7 @@ import time
 from xml.etree import ElementTree as ET
 from PySide import QtGui, QtCore
 
-# written by Frank Rueter with (lots of) help from Aaron Richiger
+## written by Frank Rueter with (lots of) help from Aaron Richiger
 # TO DO:
 #    -re-arrange code to enable nuke to to register widget
 #    -help icon with tooltip and link to nukepedia url
@@ -34,7 +34,6 @@ class Task(object):
     def setStatus(self, status):
         self.status = status
         
-
     def __repr__(self):
         return 'Task(name=%s, priority=%D, status=%d' % (self.index, self.name)
     
@@ -161,174 +160,6 @@ class TaskWidget(QtGui.QWidget):
             self.raise_()
 
         return QtCore.QPoint(x, y)
-
-class MainWindow(QtGui.QWidget):
-    '''GUI to show and edit multiple tasks'''
-    
-    def __init__(self, taskStore, settingsFile='/tmp/settings.xml', parent=None):
-        super(MainWindow, self).__init__(parent)
-        self.settingsFile = settingsFile
-        self.taskStore = taskStore
-        self.animGroupsDeleted = [] # HOLD ANIMATIONS FOR DELETED WIDGETS - REQUIRED FOR OVERLAPPING DELETE ACTIONS
-        self.setupUI()
-
-    def setupUI(self):
-        self.resize(300, 600)
-        mainLayout = QtGui.QVBoxLayout()
-        self.setLayout(mainLayout)
-        self.buttonLayout = QtGui.QHBoxLayout()
-        self.addTaskButton = QtGui.QPushButton('Add Task')
-        self.addTaskButton.setToolTip('add a new task to the list')
-        self.sortButton = QtGui.QPushButton('Sort by Priority')
-        self.sortButton.setCheckable(True)
-        self.sortButton.setToolTip('push to sort so highest priorities are at the top,\notherwise lowest will be at the top.')
-        self.helpButton = QtGui.QPushButton('?')
-        self.helpButton.setMaximumWidth(30)
-        self.helpButton.setFlat(True)
-        self.helpButton.setToolTip(self.__helpText())
-        self.hideButton = QtGui.QPushButton('Hide Finished Tasks')
-        self.hideButton.setCheckable(True)
-        self.hideButton.setToolTip('hide finished tasks to keep the list tidy')      
-        self.clipboardButton = QtGui.QPushButton('Copy To Clipboard')
-        
-        self.buttonLayout.addWidget(self.addTaskButton)
-        self.buttonLayout.addWidget(self.sortButton)
-        self.buttonLayout.addWidget(self.hideButton)
-        self.buttonLayout.addWidget(self.clipboardButton)
-        self.buttonLayout.addSpacing(20)
-        self.buttonLayout.addWidget(self.helpButton)
-        self.layout().addLayout(self.buttonLayout)
-        
-        self.taskContainer = QtGui.QWidget()
-        self.scrollArea = QtGui.QScrollArea()
-        self.scrollArea.setWidget(self.taskContainer)
-        self.layout().addWidget(self.scrollArea)
-        
-        self.taskWidgets = [TaskWidget(t, self.taskContainer) for t in self.taskStore.tasks]
-        self.update()
-    
-    def __helpText(self):
-        return '''
-        Written by Frank Rueter|OHUfx
-        
-        This is a simple to-do list that saves itself with the nuke script, so it's easier to organise
-        your own work as well as help others who might pick up a shot from you.
-        
-        Use LMB and RMB to change priorities to sort the list accordingly.
-        Change the status and hide finished tasks to keep an overview over your work load.
-        
-        Click the help button to open the respective nukepedia page.
-        '''
-    
-    def update(self):
-        '''Animate the view to match sorting and filtering requests'''
-
-        self.deletedTaskWidgets = [tw for tw in self.taskWidgets if tw.task.index == -2]
-        taskWidgetsHeight = len(self.taskWidgets) * (TaskWidget.TASKWIDGETHEIGHT * TaskWidget.TASKWIDGETSPACING)
-        self.taskContainer.resize(self.scrollArea.width() - 20, max(taskWidgetsHeight, self.scrollArea.height()))
-
-        self.animGroup = QtCore.QParallelAnimationGroup()
-        animGroupForDeletedWidget = QtCore.QParallelAnimationGroup()
-        animGroupForDeletedWidget.finished.connect(self.deleteTaskWidget)
-
-        for taskWidget in self.taskWidgets:          
-            moveAnimation = QtCore.QPropertyAnimation(taskWidget, 'pos')
-            moveAnimation.setDuration(1000)
-            moveAnimation.setStartValue(taskWidget.pos())
-            moveAnimation.setEndValue(taskWidget.getNewPosition())
-
-            if taskWidget.task.index == -2:
-                # DELETED WIDGET
-                moveAnimation.setEasingCurve(QtCore.QEasingCurve.InCubic)
-                animGroupForDeletedWidget.addAnimation(moveAnimation)
-            else:
-                moveAnimation.setEasingCurve(QtCore.QEasingCurve.OutCubic)
-                self.animGroup.addAnimation(moveAnimation)
-            taskWidget.update()
-
-        self.animGroup.start()
-        if animGroupForDeletedWidget.animationCount():
-            self.animGroupsDeleted.append(animGroupForDeletedWidget)
-            animGroupForDeletedWidget.start()
-
-
-
-    def addTaskWidget(self, task):
-        '''Add a new widget for task'''
-
-        newTaskWidget = TaskWidget(task, self.taskContainer)
-        newTaskWidget.show()
-        self.taskWidgets.append(newTaskWidget)
-        return newTaskWidget
-
-    def deleteTask(self):
-        '''Delete a task'''
-        self.taskWidgetToDelete = self.sender().parent()
-        self.taskWidgets = [taskWidget for taskWidget in self.taskWidgets if self.taskWidgetToDelete != taskWidget]
-
-    def deleteTaskWidget(self):
-        '''remove deleted widgets to avoid surprises when rescaling the parent window'''
-        sender = self.sender()
-        deletedWidget = sender.animationAt(0).targetObject()
-        deletedWidget.setParent(None)
-        self.animGroupsDeleted.remove(sender) # JUST CLEANING UP, SHUOLDNT BE NECESSARY
-
-    def closeEvent(self, event):
-        '''Store tasks and settings to disk before exising the app'''
-        self.saveSettingsAndTasks()
-        
-    def loadSettings(self):
-        '''Try to load sorting and filtering settings from disk. If nothing has been saved do nothing'''
-
-        if os.path.isfile(self.settingsFile):
-            tree = ET.parse(self.settingsFile)
-            root = tree.getroot()
-            settings = root.find('Settings')
-            self.hideButton.setChecked(eval(settings.findtext('hideFinished')))
-            self.sortButton.setChecked(eval(settings.findtext('sortState')))
-        else:
-            pass
-
-    def saveSettingsAndTasks(self):
-        '''Dump current sorting and filtering choices to disk for reloading'''
-
-        print 'saving task panel\'s settings to disk: %s' % self.settingsFile
-        settingsToBeSaved = {}
-        settingsToBeSaved['hideFinished'] = str(self.hideButton.isChecked())
-        settingsToBeSaved['sortState'] = str(self.sortButton.isChecked())
-
-        root = ET.Element('ToDoPanel')
-        settingsEle = ET.SubElement(root, 'Settings')
-        for k, v in settingsToBeSaved.iteritems():
-            settingEle = ET.SubElement(settingsEle, k)
-            settingEle.text = v
-        
-        for task in self.taskStore.tasks:
-            taskDict = task.__dict__
-            #taskDictStr = dict(zip(taskDict.keys(), [str(v) for v in taskDict.values()]))
-            tasksEle = ET.SubElement(root, 'Task')
-            for k, v in taskDict.iteritems():
-                taskEle = ET.SubElement(tasksEle, k)
-                taskEle.text = str(v)
-
-        tree = ET.ElementTree(root)
-        tree.write(self.settingsFile)
-        
-
-
-    def resizeEvent(self, event):
-        self.update()
-    def launchWebsite(self):
-        import webbrowser
-        webbrowser.open('http://www.nukepedia.com/python/ui/ToDoPanel')
-    def copyToClipboard(self):
-        sortedTasks = sorted([t for t in self.taskStore.tasks if t.index >= 0], key=lambda task: task.priority)
-        if self.sortButton.isChecked():
-            sortedTasks.reverse()
-
-        clipboard = QtGui.QApplication.clipboard() 
-        text = '\n'.join([str(t) for t in sortedTasks])
-        clipboard.setText(text)
 
 class PriorityWidget(QtGui.QPushButton):
     valueChanged = QtCore.Signal(int)
@@ -519,6 +350,173 @@ class DeleteWidget(QtGui.QPushButton):
         return self.size 
 
 
+class MainWindow(QtGui.QWidget):
+    '''GUI to show and edit multiple tasks'''
+    
+    def __init__(self, taskStore, settingsFile='/tmp/settings.xml', parent=None):
+        super(MainWindow, self).__init__(parent)
+        self.settingsFile = settingsFile
+        self.taskStore = taskStore
+        self.animGroupsDeleted = [] # HOLD ANIMATIONS FOR DELETED WIDGETS - REQUIRED FOR OVERLAPPING DELETE ACTIONS
+        self.setupUI()
+
+    def setupUI(self):
+        self.resize(300, 600)
+        mainLayout = QtGui.QVBoxLayout()
+        self.setLayout(mainLayout)
+        self.buttonLayout = QtGui.QHBoxLayout()
+        self.addTaskButton = QtGui.QPushButton('Add Task')
+        self.addTaskButton.setToolTip('add a new task to the list')
+        self.sortButton = QtGui.QPushButton('Sort by Priority')
+        self.sortButton.setCheckable(True)
+        self.sortButton.setToolTip('push to sort so highest priorities are at the top,\notherwise lowest will be at the top.')
+        self.helpButton = QtGui.QPushButton('?')
+        self.helpButton.setMaximumWidth(30)
+        self.helpButton.setFlat(True)
+        self.helpButton.setToolTip(self.__helpText())
+        self.hideButton = QtGui.QPushButton('Hide Finished Tasks')
+        self.hideButton.setCheckable(True)
+        self.hideButton.setToolTip('hide finished tasks to keep the list tidy')      
+        self.clipboardButton = QtGui.QPushButton('Copy To Clipboard')
+        
+        self.buttonLayout.addWidget(self.addTaskButton)
+        self.buttonLayout.addWidget(self.sortButton)
+        self.buttonLayout.addWidget(self.hideButton)
+        self.buttonLayout.addWidget(self.clipboardButton)
+        self.buttonLayout.addSpacing(20)
+        self.buttonLayout.addWidget(self.helpButton)
+        self.layout().addLayout(self.buttonLayout)
+        
+        self.taskContainer = QtGui.QWidget()
+        self.scrollArea = QtGui.QScrollArea()
+        self.scrollArea.setWidget(self.taskContainer)
+        self.layout().addWidget(self.scrollArea)
+        
+        self.taskWidgets = [TaskWidget(t, self.taskContainer) for t in self.taskStore.tasks]
+        self.update()
+    
+    def __helpText(self):
+        return '''
+        Written by Frank Rueter|OHUfx
+        
+        This is a simple to-do list that saves itself with the nuke script, so it's easier to organise
+        your own work as well as help others who might pick up a shot from you.
+        
+        Use LMB and RMB to change priorities to sort the list accordingly.
+        Change the status and hide finished tasks to keep an overview over your work load.
+        
+        Click the help button to open the respective nukepedia page.
+        '''
+    
+    def update(self):
+        '''Animate the view to match sorting and filtering requests'''
+
+        self.deletedTaskWidgets = [tw for tw in self.taskWidgets if tw.task.index == -2]
+        taskWidgetsHeight = len(self.taskWidgets) * (TaskWidget.TASKWIDGETHEIGHT * TaskWidget.TASKWIDGETSPACING)
+        self.taskContainer.resize(self.scrollArea.width() - 20, max(taskWidgetsHeight, self.scrollArea.height()))
+
+        self.animGroup = QtCore.QParallelAnimationGroup()
+        animGroupForDeletedWidget = QtCore.QParallelAnimationGroup()
+        animGroupForDeletedWidget.finished.connect(self.deleteTaskWidget)
+
+        for taskWidget in self.taskWidgets:          
+            moveAnimation = QtCore.QPropertyAnimation(taskWidget, 'pos')
+            moveAnimation.setDuration(1000)
+            moveAnimation.setStartValue(taskWidget.pos())
+            moveAnimation.setEndValue(taskWidget.getNewPosition())
+
+            if taskWidget.task.index == -2:
+                # DELETED WIDGET
+                moveAnimation.setEasingCurve(QtCore.QEasingCurve.InCubic)
+                animGroupForDeletedWidget.addAnimation(moveAnimation)
+            else:
+                moveAnimation.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+                self.animGroup.addAnimation(moveAnimation)
+            taskWidget.update()
+
+        self.animGroup.start()
+        if animGroupForDeletedWidget.animationCount():
+            self.animGroupsDeleted.append(animGroupForDeletedWidget)
+            animGroupForDeletedWidget.start()
+
+
+
+    def addTaskWidget(self, task):
+        '''Add a new widget for task'''
+
+        newTaskWidget = TaskWidget(task, self.taskContainer)
+        newTaskWidget.show()
+        self.taskWidgets.append(newTaskWidget)
+        return newTaskWidget
+
+    def deleteTask(self):
+        '''Delete a task'''
+        self.taskWidgetToDelete = self.sender().parent()
+        self.taskWidgets = [taskWidget for taskWidget in self.taskWidgets if self.taskWidgetToDelete != taskWidget]
+
+    def deleteTaskWidget(self):
+        '''remove deleted widgets to avoid surprises when rescaling the parent window'''
+        sender = self.sender()
+        deletedWidget = sender.animationAt(0).targetObject()
+        deletedWidget.setParent(None)
+        self.animGroupsDeleted.remove(sender) # JUST CLEANING UP, SHUOLDNT BE NECESSARY
+
+    def closeEvent(self, event):
+        '''Store tasks and settings to disk before exising the app'''
+        self.saveSettingsAndTasks()
+        
+    def loadSettings(self):
+        '''Try to load sorting and filtering settings from disk. If nothing has been saved do nothing'''
+
+        if os.path.isfile(self.settingsFile):
+            tree = ET.parse(self.settingsFile)
+            root = tree.getroot()
+            settings = root.find('Settings')
+            self.hideButton.setChecked(eval(settings.findtext('hideFinished')))
+            self.sortButton.setChecked(eval(settings.findtext('sortState')))
+        else:
+            pass
+
+    def saveSettingsAndTasks(self):
+        '''Dump current sorting and filtering choices to disk for reloading'''
+
+        print 'saving task panel\'s settings to disk: %s' % self.settingsFile
+        settingsToBeSaved = {}
+        settingsToBeSaved['hideFinished'] = str(self.hideButton.isChecked())
+        settingsToBeSaved['sortState'] = str(self.sortButton.isChecked())
+
+        root = ET.Element('ToDoPanel')
+        settingsEle = ET.SubElement(root, 'Settings')
+        for k, v in settingsToBeSaved.iteritems():
+            settingEle = ET.SubElement(settingsEle, k)
+            settingEle.text = v
+        
+        for task in self.taskStore.tasks:
+            taskDict = task.__dict__
+            #taskDictStr = dict(zip(taskDict.keys(), [str(v) for v in taskDict.values()]))
+            tasksEle = ET.SubElement(root, 'Task')
+            for k, v in taskDict.iteritems():
+                taskEle = ET.SubElement(tasksEle, k)
+                taskEle.text = str(v)
+
+        tree = ET.ElementTree(root)
+        tree.write(self.settingsFile)
+        
+
+    def resizeEvent(self, event):
+        self.update()
+    def launchWebsite(self):
+        import webbrowser
+        webbrowser.open('http://www.nukepedia.com/python/ui/ToDoPanel')
+    def copyToClipboard(self):
+        sortedTasks = sorted([t for t in self.taskStore.tasks if t.index >= 0], key=lambda task: task.priority)
+        if self.sortButton.isChecked():
+            sortedTasks.reverse()
+
+        clipboard = QtGui.QApplication.clipboard() 
+        text = '\n'.join([str(t) for t in sortedTasks])
+        clipboard.setText(text)
+
 ########## CONTROLLER CLASSES ###########################################################################
 
 class Controller(QtCore.QObject):
@@ -584,7 +582,5 @@ if __name__ == '__main__':
     app = QtGui.QApplication([])
     controller = Controller()
     controller.start()
-    #w = PriorityWidget()
-    #w.show()
     sys.exit(app.exec_())
 
