@@ -403,7 +403,7 @@ class MainWindow(QtGui.QWidget):
                 p = widget.parentWidget()
                 while p:
                     if p.parent() and isinstance(p.parent(), QtGui.QStackedWidget):
-                        p.parent().removeWidget(p)
+                        p.parent().removeWidget(p) # THIS ASSUMES NUKE'S QSTACKEDWIDGET HOLDING THIS WIDGET
                         p=None
                     else:
                         p = p.parentWidget()
@@ -422,6 +422,15 @@ class MainWindow(QtGui.QWidget):
         Click the help button to open the respective nukepedia page.
         '''
     
+    def getSettingsFile(self):
+        '''get the path to the xml file to read/write settings'''
+        if inNuke():
+            print 'using settings file:', nuke.root()['todoSettingsFile'].value()
+        elif inHiero():
+            raise NotImplementedError
+        else:
+            raise NotImplementedError
+
     def addTaskWidget(self, task):
         '''Add a new widget for task'''
 
@@ -603,6 +612,13 @@ def inNuke():
     except:
         return False
 
+def inHiero():
+    '''Return True if this is run from inside of Hiero, else return False'''
+    try:
+        return 'hiero' in os.environ['FOUNDRY_APPLICATION_FEATURE_NAME']
+    except:
+        return False
+
 def registerNukePanel():
     '''Register widget as a Nuke panel'''
     import nukescripts
@@ -623,7 +639,7 @@ def nukeSetup():
             return False
         print 'adding user knobs in script settings'
         tab = nuke.Tab_Knob('To Do List')
-        settingsKnob = nuke.File_Knob('Settings file')
+        settingsKnob = nuke.File_Knob('todoSettingsFile', 'Settings file')
         root.addKnob(tab)
         root.addKnob(settingsKnob)
 
