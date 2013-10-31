@@ -447,11 +447,15 @@ class MainWindow(QtGui.QWidget):
         return '''
         Written by Frank Rueter|OHUfx
         
-        This is a simple to-do list that saves itself with the nuke script, so it's easier to organise
-        your own work as well as help others who might pick up a shot from you.
+        This is a simple to-do list that saves itself with the Nuke script or Hiero project to help organise
+        your own work as well as help others who might pick up a shot/project from you.
         
         Use LMB and RMB to change priorities to sort the list accordingly.
+        You can also use MMB+drag or alt+LMB drag to change a task's priority.
+        
         Change the status and hide finished tasks to keep an overview over your work load.
+        
+        The "Copy To Clipboard" button puts a neatly formatted version of the current tasks into the clipboard for use in email or other text documents.
         
         Click the help button to open the respective nukepedia page.
         '''
