@@ -1,13 +1,15 @@
 import os
+import sys
 import time
 from xml.etree import ElementTree as ET
 from PySide import QtGui, QtCore, QtNetwork
 
 ## written by Frank Rueter with (lots of) help from Aaron Richiger
 # TO DO:
+#    -work as standalone (ENV VARIABLE FOR SETTINGS FILE)?
 #    -help icon with tooltip and link to nukepedia url
-#    -write getSettingsFile() to work with Nuke, Hiero and as standalone
-
+#    -re-structure so that settingsFilei is populated on showEvent rather than in the constructor (because the nuke and Hiero construct widgets at different times)
+#    -load settings when project is changed / script is loaded
 
 class Task(object):
     '''
@@ -41,7 +43,7 @@ class Task(object):
 class TaskStore(QtCore.QObject):
     '''Stores, filters, sorts and delivers all tasks'''
     
-    def __init__(self, tasksFile='/tmp/settings.xml'):
+    def __init__(self, tasksFile):
         super(TaskStore, self).__init__()
         self.tasksFile = tasksFile
         self.tasks = self.loadTasks()
@@ -62,9 +64,8 @@ class TaskStore(QtCore.QObject):
 
     def loadTasks(self):
         '''Try to load tasks from disk. If no tasks have been saved return default data'''
-        
     
-        if os.path.isfile(self.tasksFile):
+        if self.tasksFile and os.path.isfile(self.tasksFile):
             tree = ET.parse(self.tasksFile)
             root = tree.getroot()
             taskElements = root.findall('Task')
@@ -168,6 +169,7 @@ class PriorityWidget(QtGui.QPushButton):
         self.setToolTip('priority\n\nLMB to increase\nRMB to decrease\nmove mouse away afterchanging value to trigger re-sorting')
         self.active = False
         self.value = 0
+        self.allowDrag = False
         
     def setValue(self, value):
         self.value = value
@@ -188,11 +190,31 @@ class PriorityWidget(QtGui.QPushButton):
         painter.drawText(self.rect(), QtCore.Qt.AlignCenter, str(self.value))
 
     def mousePressEvent(self, event):
-        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+        if ((event.modifiers() == QtCore.Qt.AltModifier) and (event.button() == QtCore.Qt.MouseButton.LeftButton)) or\
+           (event.button() == QtCore.Qt.MouseButton.MiddleButton):
+            print 'allowing drag'
+            self.allowDrag = True
+            self.clickPosition = event.pos()
+            self.oldValue = self.value
+        elif event.button() == QtCore.Qt.MouseButton.LeftButton:
             self.setValue(self.value + 1)
         elif event.button() == QtCore.Qt.MouseButton.RightButton:
             self.setValue(self.value - 1)
+        
+    def mouseReleaseEvent(self, event):
+        self.allowDrag = False
 
+    def mouseMoveEvent(self, event):
+        if self.allowDrag:
+            print 'changing value'
+            newValue = self.oldValue + (event.pos().x() - self.clickPosition.x()) / 50
+            self.setValue(newValue)
+            self.valueChanged.emit(newValue)
+
+    def wheelEvent(self, event):
+        '''this seems to be eaten by nuke's parent widget'''
+        print event
+        
     def enterEvent(self, event):
         self.active = True
 
@@ -200,6 +222,7 @@ class PriorityWidget(QtGui.QPushButton):
         self.active = False
         self.clearFocus()
         self.allowSorting.emit()
+    
 
 class StatusWidgetPie(QtGui.QComboBox):
     def __init__(self, parent=None):
@@ -348,16 +371,24 @@ class DeleteWidget(QtGui.QPushButton):
 
 class MainWindow(QtGui.QWidget):
     '''GUI to show and edit multiple tasks'''
-    
-    def __init__(self, settingsFile='/tmp/settings.xml', parent=None):
+    appName = 'com.ohufx.ToDoList'
+    def __init__(self, parent=None):
         self.checkInstances()
         super(MainWindow, self).__init__(parent)
 
-        self.settingsFile = settingsFile
-        self.taskStore = TaskStore()
-        self.animGroupsDeleted = [] # HOLD ANIMATIONS FOR DELETED WIDGETS - REQUIRED FOR OVERLAPPING DELETE ACTIONS
+        self.setObjectName(self.appName)
+        self.setWindowTitle('To Do List')
+        self.inNuke = inNuke()
+        self.inHiero = inHiero()
+        self.settingsFile = ''
+        self.setSettingsFile()
+        self.taskStore = TaskStore(self.settingsFile)
         self.setupUI()
+        self.loadSettings()
         self.controller()
+        
+        self.animGroupsDeleted = [] # HOLD ANIMATIONS FOR DELETED WIDGETS - REQUIRED FOR OVERLAPPING DELETE ACTIONS
+
 
     def setupUI(self):
         self.resize(300, 600)
@@ -422,14 +453,20 @@ class MainWindow(QtGui.QWidget):
         Click the help button to open the respective nukepedia page.
         '''
     
-    def getSettingsFile(self):
+    def setSettingsFile(self):
         '''get the path to the xml file to read/write settings'''
-        if inNuke():
-            print 'using settings file:', nuke.root()['todoSettingsFile'].value()
-        elif inHiero():
-            raise NotImplementedError
+        if self.inNuke:
+            import nuke
+            if nukeSetup():
+                self.settingsFile =  nuke.root()['todoSettingsFile'].value()
+                print 'using settings file:', self.settingsFile
+        elif self.inHiero:
+            import hiero.core
+            if hieroSetup():
+                self.settingsFile = [tag.metadata().value('tag.settingsFile') for tag in hiero.core.findProjectTags() if tag.name() == 'ohufx.ToDoList'][0]
+                print 'using settings file:', self.settingsFile
         else:
-            raise NotImplementedError
+            self.settingsFile = None
 
     def addTaskWidget(self, task):
         '''Add a new widget for task'''
@@ -454,7 +491,8 @@ class MainWindow(QtGui.QWidget):
     def loadSettings(self):
         '''Try to load sorting and filtering settings from disk. If nothing has been saved do nothing'''
 
-        if os.path.isfile(self.settingsFile):
+        if self.settingsFile and os.path.isfile(self.settingsFile):
+            print 'loading settings from', self.settingsFile
             tree = ET.parse(self.settingsFile)
             root = tree.getroot()
             settings = root.find('Settings')
@@ -465,7 +503,9 @@ class MainWindow(QtGui.QWidget):
 
     def saveSettingsAndTasks(self):
         '''Dump current sorting and filtering choices to disk for reloading'''
-
+        if not self.settingsFile:
+            print 'no settings file found, nothign will be saved'
+            return
         print 'saving task panel\'s settings to disk: %s' % self.settingsFile
         settingsToBeSaved = {}
         settingsToBeSaved['hideFinished'] = str(self.hideButton.isChecked())
@@ -479,7 +519,6 @@ class MainWindow(QtGui.QWidget):
         
         for task in self.taskStore.tasks:
             taskDict = task.__dict__
-            #taskDictStr = dict(zip(taskDict.keys(), [str(v) for v in taskDict.values()]))
             tasksEle = ET.SubElement(root, 'Task')
             for k, v in taskDict.iteritems():
                 taskEle = ET.SubElement(tasksEle, k)
@@ -505,7 +544,6 @@ class MainWindow(QtGui.QWidget):
         '''Need this to be able to register the widget as panl inside of nuke (this won't work with the Controller class)'''
 
         self.connectSignalsWithSlots()
-        self.loadSettings()
         self.applyFilterAndSorting()
 
     def onAddTask(self):
@@ -524,14 +562,16 @@ class MainWindow(QtGui.QWidget):
         self.taskStore.resetTasks()
         self.taskStore.filterFinished(self.hideButton.isChecked())
         self.taskStore.sortByPriority(self.sortButton.isChecked())
-        self.update()
+        self.update()       
 
     def connectSignalsWithSlots(self):
         '''Connect the main window's widgets with their slots'''
         
         self.addTaskButton.clicked.connect(self.onAddTask)
         self.sortButton.clicked.connect(self.applyFilterAndSorting)
+        self.sortButton.clicked.connect(self.saveSettingsAndTasks)
         self.hideButton.clicked.connect(self.applyFilterAndSorting)
+        self.hideButton.clicked.connect(self.saveSettingsAndTasks)
         self.helpButton.clicked.connect(self.launchWebsite)
         self.clipboardButton.clicked.connect(self.copyToClipboard)
         for tw in self.taskWidgets:
@@ -541,32 +581,44 @@ class MainWindow(QtGui.QWidget):
         '''Connect task widgets' signals with their slots'''
 
         taskWidget.taskNameWidget.textChanged.connect(taskWidget.task.setName)
+        taskWidget.taskNameWidget.editingFinished.connect(self.saveSettingsAndTasks)
         taskWidget.priorityWidget.valueChanged.connect(taskWidget.task.setPriority)
+        taskWidget.priorityWidget.valueChanged.connect(self.saveSettingsAndTasks)
         taskWidget.priorityWidget.allowSorting.connect(self.applyFilterAndSorting)
         taskWidget.statusWidget.currentIndexChanged.connect(taskWidget.task.setStatus)
         taskWidget.statusWidget.currentIndexChanged.connect(self.applyFilterAndSorting)
+        taskWidget.statusWidget.currentIndexChanged.connect(self.saveSettingsAndTasks)
         taskWidget.deleteWidget.clicked.connect(self.taskStore.deleteTask)
         taskWidget.deleteWidget.clicked.connect(self.update)
         taskWidget.deleteWidget.clicked.connect(self.deleteTask)
+        taskWidget.deleteWidget.clicked.connect(self.saveSettingsAndTasks)
 
     def resizeEvent(self, event):
         self.update()
 
-    def closeEvent(self, event):
+    def closeEventHOLD(self, event):
         '''Store tasks and settings to disk before exising the app'''
-        self.saveSettingsAndTasks()
 
-    def hideEvent(self, event):
+        if self.settingsFile:
+            self.saveSettingsAndTasks()
+
+    def hideEventHOLD(self, event):
         '''
         Store tasks and settings to disk before exising the app.
         This event is triggered when a registered panel in Nuke is "closed" in which case the closeEvent is not called in
         '''
-        self.saveSettingsAndTasks()
+
+        if self.settingsFile:
+            self.saveSettingsAndTasks()
         
     def showEvent(self, event):
-        if inNuke():
-            if not nukeSetup():
+        if self.inNuke or self.inHiero:
+            # IF NO SETTINGS FILE HAS BEEN SET BY NOW DON'T OPEN THE PANEL TO AVOID LOSS OF DATA
+            if not self.settingsFile:
                 self.close()
+        else:
+            # STANDALONE FOR DEBUGGING- NOTHING WILL BE SAVED - FOR DEBUG ONLY
+            pass
 
     def update(self):
         '''Animate the view to match sorting and filtering requests'''
@@ -605,24 +657,30 @@ class MainWindow(QtGui.QWidget):
 
 
 
+
+def settingsPathFromProject(projectFile):
+    '''return the path for the settings file based on projectFile'''
+    return os.path.splitext(projectFile)[0] + '_toDoSettings.xml'
+
 def inNuke():
     '''Return True if this is run from inside of Nuke, else return False'''
-    try:
-        return 'nuke' in os.environ['FOUNDRY_APPLICATION_FEATURE_NAME']
-    except:
-        return False
+    return 'Nuke' in os.path.split(sys.executable)[0]
 
 def inHiero():
     '''Return True if this is run from inside of Hiero, else return False'''
-    try:
-        return 'hiero' in os.environ['FOUNDRY_APPLICATION_FEATURE_NAME']
-    except:
-        return False
+    return 'Hiero' in QtGui.QApplication.applicationName()
 
 def registerNukePanel():
     '''Register widget as a Nuke panel'''
     import nukescripts
-    nukescripts.registerWidgetAsPanel('ToDoList.MainWindow', 'To Do List', 'com.ohufx.ToDoList')
+    nukescripts.registerWidgetAsPanel('ToDoList.MainWindow', 'To Do List', MainWindow.appName)
+
+def registerHieroPanel():
+    '''Register widget as a Hiero panel'''
+    import hiero
+    toDoListWidget = MainWindow()
+    wm = hiero.ui.windowManager()
+    wm.addWindow(toDoListWidget)
 
 def nukeSetup():
     '''
@@ -642,29 +700,64 @@ def nukeSetup():
         settingsKnob = nuke.File_Knob('todoSettingsFile', 'Settings file')
         root.addKnob(tab)
         root.addKnob(settingsKnob)
-
-        settingsKnob.setValue(os.path.splitext(scriptPath)[0] + '_toDoSettings.xml')
+        settingsKnob.setValue(settingsPathFromProject(scriptPath))
         return True
-    return True
+    else:
+        return True
 
-try:
-    if inNuke():
-        registerNukePanel()
-except:
-    pass
+def hieroSetup():
+    '''
+    Set up Hiero tags in the current project to keep track of the settings file.
+    Aborts and returns False if Hiero project hasn't been saved.
+    '''
+    tagName = 'ohufx.ToDoList'
+    import hiero
+
+    def findSettingsTag(tagName):
+        projectTags = hiero.core.findProjectTags()
+        for tag in projectTags:
+            if tag.name() == tagName:
+                return tag
+    
+    activeProject = hiero.core.projects()[-1]
+    projectPath = activeProject.path()
+
+    if not findSettingsTag(tagName):
+        print 'no tag found'
+        if not projectPath:
+            print "project hasn't been saved"
+            # DO SOMETHING USEFUL WHEN SCRIPT HASN'T BEEN SAVED YET
+            msg = QtGui.QMessageBox()
+            msg.setText('Please save the Hiero project before using the To Do List\n(so the list\'s settings can be saved accordingly)')
+            msg.exec_()
+            return False
+        print 'adding tag to project'
+        tagsBin = activeProject.tagsBin()
+        toDoListSettingsTag = hiero.core.Tag(tagName)
+        metaData = toDoListSettingsTag.metadata()
+        metaData.setValue('tag.settingsFile', settingsPathFromProject(projectPath))
+        tagsBin.addItem(toDoListSettingsTag)
+        return True
+    else:
+        return True
+
+###### RUN THIS UPON IMPORT ########################################################################
+#if inNuke():
+    #print 'Registering ToDoList for Nuke'
+    #registerNukePanel()
+
+#elif inHiero():
+    #print 'Registering ToDoList for Hiero'
+    #registerHieroPanel()
 
 
 if __name__ == '__main__':
+    #### STANDALONE
+    import sys
+    app = QtGui.QApplication([])
+    p = MainWindow()
+    p.show()
+    sys.exit(app.exec_())
     
-    try:
-        if 'nuke' in os.environ['FOUNDRY_APPLICATION_FEATURE_NAME']:
-            w = nukescripts.registerWidgetAsPanel('MainWindow', 'To Do list', 'com.ohufx.ToDoList', create=True)
-
-    except:    
-        import sys
-        app = QtGui.QApplication([])
-        p = MainWindow()
-        p.show()
-        sys.exit(app.exec_())
 
 
