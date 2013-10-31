@@ -383,14 +383,13 @@ class MainWindow(QtGui.QWidget):
         self.inNuke = inNuke()
         self.inHiero = inHiero()
         self.settingsFile = ''
-        self.setSettingsFile()
-        self.taskStore = TaskStore(self.settingsFile)
-        self.setupUI()
-        self.loadSettings()
-        self.controller()
+        #self.setSettingsFile()
+        #self.taskStore = TaskStore(self.settingsFile)
+        #self.setupUI()
+        #self.loadSettings()
+        #self.controller()
         
         self.animGroupsDeleted = [] # HOLD ANIMATIONS FOR DELETED WIDGETS - REQUIRED FOR OVERLAPPING DELETE ACTIONS
-
 
     def setupUI(self):
         self.resize(300, 600)
@@ -619,10 +618,19 @@ class MainWindow(QtGui.QWidget):
             self.saveSettingsAndTasks()
         
     def showEvent(self, event):
+        
         if self.inNuke or self.inHiero:
             # IF NO SETTINGS FILE HAS BEEN SET BY NOW DON'T OPEN THE PANEL TO AVOID LOSS OF DATA
             if not self.settingsFile:
                 self.close()
+            else:
+                # SET UP EVERYTHING WHEN WIDGET IS SHOWN TO ENSURE PROPER LOADING OF SETTINGS
+                # (WHICH DEPENDS ON THE HOST APPLICATION ENVIRONMENT AND IS NOT AVAILABLE WHEN THE WIDGET IS INSTANTIATED)
+                self.setSettingsFile()
+                self.taskStore = TaskStore(self.settingsFile)
+                self.setupUI()
+                self.loadSettings()
+                self.controller()
         else:
             # STANDALONE FOR DEBUGGING- NOTHING WILL BE SAVED - FOR DEBUG ONLY
             pass
