@@ -680,7 +680,7 @@ def inHiero():
 def registerNukePanel():
     '''Register widget as a Nuke panel'''
     import nukescripts
-    nukescripts.registerWidgetAsPanel('ToDoList.MainWindow', 'To Do List', MainWindow.appName)
+    nukescripts.registerWidgetAsPanel('ToDoList.Wrapper', 'To Do List', Wrapper.appName)
 
 def registerHieroPanel():
     '''Register widget as a Hiero panel'''
@@ -758,11 +758,27 @@ def hieroSetup():
     #registerHieroPanel()
 
 
+
+class Wrapper(QtGui.QWidget):
+    appName = 'com.ohufx.ToDoList'
+    
+    def __init__(self, parent=None):
+        super(Wrapper, self).__init__(parent)
+        self.setObjectName(self.appName)
+        self.setWindowTitle('To Do List')        
+        self.setLayout(QtGui.QVBoxLayout())
+        self.mainWidget = QtGui.QWidget()
+        
+    def showEvent(self, event):
+        self.mainWidget = MainWindow()
+        self.layout().addWidget(self.mainWidget)
+
+
 if __name__ == '__main__':
     #### STANDALONE
     import sys
     app = QtGui.QApplication([])
-    p = MainWindow()
+    p = Wrapper()
     p.show()
     sys.exit(app.exec_())
     
