@@ -5,11 +5,13 @@ from xml.etree import ElementTree as ET
 from PySide import QtGui, QtCore, QtNetwork
 
 ## written by Frank Rueter with (lots of) help from Aaron Richiger
+# DONE SINCE LAST CHECK IN:
+# -added tooltips to PriorityWidget to describe additional features
+# -added tooltip to ClipboardButton
+
 # TO DO:
-#    -work as standalone (ENV VARIABLE FOR SETTINGS FILE)?
 #    -help icon with tooltip and link to nukepedia url
 #    -re-structure so that settingsFilei is populated on showEvent rather than in the constructor (because the nuke and Hiero construct widgets at different times)
-#    -load settings when project is changed / script is loaded
 
 class Task(object):
     '''
@@ -166,7 +168,7 @@ class PriorityWidget(QtGui.QPushButton):
         super(PriorityWidget, self).__init__(parent)
         self.color = QtGui.QColor(247, 147, 30, 255)
         self.font = QtGui.QFont('Helvetica', 12, QtGui.QFont.Bold)
-        self.setToolTip('priority\n\nLMB to increase\nRMB to decrease\nmove mouse away afterchanging value to trigger re-sorting')
+        self.setToolTip('priority\n\nLMB to increase  -  RMB to decrease\nor\nalt+LMB drag to change value\nor\nMMB drag to change value\n\nmove mouse away after changing value to trigger re-sorting')
         self.active = False
         self.value = 0
         self.allowDrag = False
@@ -396,18 +398,19 @@ class MainWindow(QtGui.QWidget):
         self.setLayout(mainLayout)
         self.buttonLayout = QtGui.QHBoxLayout()
         self.addTaskButton = QtGui.QPushButton('Add Task')
-        self.addTaskButton.setToolTip('add a new task to the list')
+        self.addTaskButton.setToolTip('Add a new task to the list')
         self.sortButton = QtGui.QPushButton('Sort by Priority')
         self.sortButton.setCheckable(True)
-        self.sortButton.setToolTip('push to sort so highest priorities are at the top,\notherwise lowest will be at the top.')
+        self.sortButton.setToolTip('Push to sort so highest priorities are at the top,\notherwise lowest will be at the top.')
         self.helpButton = QtGui.QPushButton('?')
         self.helpButton.setMaximumWidth(30)
         self.helpButton.setFlat(True)
         self.helpButton.setToolTip(self.__helpText())
         self.hideButton = QtGui.QPushButton('Hide Finished Tasks')
         self.hideButton.setCheckable(True)
-        self.hideButton.setToolTip('hide finished tasks to keep the list tidy')      
+        self.hideButton.setToolTip('Hide finished tasks to keep the list tidy')      
         self.clipboardButton = QtGui.QPushButton('Copy To Clipboard')
+        self.clipboardButton.setToolTip('Push to copy current task info to cliboard for pasting into emails or other text documents.\nHandy to keep those coordinators happy.')
         
         self.buttonLayout.addWidget(self.addTaskButton)
         self.buttonLayout.addWidget(self.sortButton)
@@ -504,7 +507,7 @@ class MainWindow(QtGui.QWidget):
     def saveSettingsAndTasks(self):
         '''Dump current sorting and filtering choices to disk for reloading'''
         if not self.settingsFile:
-            print 'no settings file found, nothign will be saved'
+            print 'no settings file found, nothing will be saved'
             return
         print 'saving task panel\'s settings to disk: %s' % self.settingsFile
         settingsToBeSaved = {}
