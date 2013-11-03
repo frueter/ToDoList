@@ -380,6 +380,7 @@ class MainWindow(QtGui.QWidget):
 
         self.setObjectName(self.appName)
         self.setWindowTitle('To Do List')
+        self.animGroupsDeleted = [] # HOLD ANIMATIONS FOR DELETED WIDGETS - REQUIRED FOR OVERLAPPING DELETE ACTIONS
         self.inNuke = inNuke()
         self.inHiero = inHiero()
         self.settingsFile = ''
@@ -388,8 +389,7 @@ class MainWindow(QtGui.QWidget):
         self.setupUI()
         self.loadSettings()
         self.controller()
-        
-        self.animGroupsDeleted = [] # HOLD ANIMATIONS FOR DELETED WIDGETS - REQUIRED FOR OVERLAPPING DELETE ACTIONS
+
 
 
     def setupUI(self):
@@ -397,6 +397,9 @@ class MainWindow(QtGui.QWidget):
         mainLayout = QtGui.QVBoxLayout()
         self.setLayout(mainLayout)
         self.buttonLayout = QtGui.QHBoxLayout()
+        self.msg = QtGui.QLabel()
+        self.msg.setText('<b>The project file has not been saved yet. Please save first before using this panel.</b>')
+        
         self.addTaskButton = QtGui.QPushButton('Add Task')
         self.addTaskButton.setToolTip('Add a new task to the list')
         self.sortButton = QtGui.QPushButton('Sort by Priority')
@@ -418,15 +421,16 @@ class MainWindow(QtGui.QWidget):
         self.buttonLayout.addWidget(self.clipboardButton)
         self.buttonLayout.addSpacing(20)
         self.buttonLayout.addWidget(self.helpButton)
-        self.layout().addLayout(self.buttonLayout)
         
+        self.layout().addWidget(self.msg)
+        self.layout().addLayout(self.buttonLayout)
+       
         self.taskContainer = QtGui.QWidget()
         self.scrollArea = QtGui.QScrollArea()
         self.scrollArea.setWidget(self.taskContainer)
         self.layout().addWidget(self.scrollArea)
-        
         self.taskWidgets = [TaskWidget(t, self.taskContainer) for t in self.taskStore.tasks]
-        self.update()
+        #self.update()
     
     def checkInstances(self):
         '''Check if other instances are already runnign and close them before proceding.'''
@@ -534,10 +538,6 @@ class MainWindow(QtGui.QWidget):
         tree = ET.ElementTree(root)
         tree.write(self.settingsFile)
               
-    def launchWebsite(self):
-        import webbrowser
-        webbrowser.open('http://www.nukepedia.com/python/ui/ToDoPanel')
-        
     def copyToClipboard(self):
         sortedTasks = sorted([t for t in self.taskStore.tasks if t.index >= 0], key=lambda task: task.priority)
         if self.sortButton.isChecked():
@@ -579,7 +579,7 @@ class MainWindow(QtGui.QWidget):
         self.sortButton.clicked.connect(self.saveSettingsAndTasks)
         self.hideButton.clicked.connect(self.applyFilterAndSorting)
         self.hideButton.clicked.connect(self.saveSettingsAndTasks)
-        self.helpButton.clicked.connect(self.launchWebsite)
+        self.helpButton.clicked.connect(launchWebsite)
         self.clipboardButton.clicked.connect(self.copyToClipboard)
         for tw in self.taskWidgets:
             self.connectTaskWidgetSignals(tw)
@@ -620,12 +620,27 @@ class MainWindow(QtGui.QWidget):
         
     def showEvent(self, event):
         if self.inNuke or self.inHiero:
-            # IF NO SETTINGS FILE HAS BEEN SET BY NOW DON'T OPEN THE PANEL TO AVOID LOSS OF DATA
+            # IF NO SETTINGS FILE HAS BEEN SET BY NOW, DISABLE ALL WIDGETS AND DISPLAY A MESSAGE IN THE PANEL
             if not self.settingsFile:
-                self.close()
+                self.disableWidget()
+                self.msg.setHidden(False)
+            else:
+                self.msg.setHidden(True)
         else:
             # STANDALONE FOR DEBUGGING- NOTHING WILL BE SAVED - FOR DEBUG ONLY
             pass
+
+    def disableWidget(self):
+        '''Disable all child widgets and display a message to ask user to save script/project'''
+        for w in self.children():
+            try:
+                if w is not self.msg:
+                    w.setDisabled(True)
+
+            except AttributeError:
+                # widget is layout and has no setDiablsed method
+                pass
+
 
     def update(self):
         '''Animate the view to match sorting and filtering requests'''
@@ -661,9 +676,9 @@ class MainWindow(QtGui.QWidget):
 
 
 
-
-
-
+def launchWebsite():
+    import webbrowser
+    webbrowser.open('http://www.nukepedia.com/python/ui/ToDoPanel')
 
 def settingsPathFromProject(projectFile):
     '''return the path for the settings file based on projectFile'''
@@ -700,7 +715,7 @@ def nukeSetup():
         scriptPath = root.name()
         if scriptPath == 'Root':
             # DO SOMETHING USEFUL WHEN SCRIPT HASN'T BEEN SAVED YET
-            nuke.message('Please save the nuke script before using the To Do List\n(so the list\'s settings can be saved accordingly)')
+            #nuke.message('Please save the nuke script before using the To Do List\n(so the list\'s settings can be saved accordingly)')
             return False
         print 'adding user knobs in script settings'
         tab = nuke.Tab_Knob('To Do List')
@@ -734,9 +749,9 @@ def hieroSetup():
         if not projectPath:
             print "project hasn't been saved"
             # DO SOMETHING USEFUL WHEN SCRIPT HASN'T BEEN SAVED YET
-            msg = QtGui.QMessageBox()
-            msg.setText('Please save the Hiero project before using the To Do List\n(so the list\'s settings can be saved accordingly)')
-            msg.exec_()
+            #msg = QtGui.QMessageBox()
+            #msg.setText('Please save the Hiero project before using the To Do List\n(so the list\'s settings can be saved accordingly)')
+            #msg.exec_()
             return False
         print 'adding tag to project'
         tagsBin = activeProject.tagsBin()
