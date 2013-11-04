@@ -6,12 +6,21 @@ from PySide import QtGui, QtCore, QtNetwork
 
 ## written by Frank Rueter with (lots of) help from Aaron Richiger
 # DONE SINCE LAST CHECK IN:
-# -added tooltips to PriorityWidget to describe additional features
-# -added tooltip to ClipboardButton
+#  - added drag indicator to PriorityWidget
+#  - polished tooltips
+#  - added warning message for Nuke bug when script tries to restore panel upon being lodaed
+#  - adding __str__ to identify panel to remote-load it via nuke.onScriptSave callback
 
 # TO DO:
+#    -implement Hiero integration (currently missing some Hiero signals in 1.8 to do this)
+#    -add callback to enable todo list when nuke script is saved
 #    -help icon with tooltip and link to nukepedia url
-#    -re-structure so that settingsFilei is populated on showEvent rather than in the constructor (because the nuke and Hiero construct widgets at different times)
+
+
+class NukeError(Exception):
+
+    def __str__(self):
+        return '''This is the ol' "A PythonObject is not attached to a node" error that we need to work around for now'''
 
 class Task(object):
     '''
@@ -110,7 +119,30 @@ class TaskStore(QtCore.QObject):
 
 
 ########## VIEW CLASSES ###########################################################################
+class DragIndicator(QtGui.QWidget):
+    def __init__(self, parent=None):
+        '''mini widget to display on mouse over on PriorityWidget to indicate dragability'''
+        super(DragIndicator, self).__init__(parent)
+        self.setSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
 
+    def sizeHint(self):
+        return QtCore.QSize(self.parentWidget().width(), self.parentWidget().height()/6)
+   
+    def paintEvent(self, event):
+        '''Paint the button grey if not highlighted, else yellow'''
+
+        painter = QtGui.QPainter(self)
+        colour = QtGui.QColor(247, 147, 30, 150)
+        gradient = QtGui.QLinearGradient(QtCore.QPoint(0,0), QtCore.QPoint(self.width()/2, 0))
+        gradient.setColorAt(0, QtCore.Qt.transparent)
+        gradient.setColorAt(1, colour)
+        gradient.setSpread(QtGui.QGradient.ReflectSpread)
+        painter.setBrush(QtGui.QBrush(gradient))
+        painter.setPen(QtCore.Qt.transparent)
+        rect = QtCore.QRect(0,0,self.width(),self.height())
+        painter.drawRect(rect)
+
+ 
 class TaskWidget(QtGui.QWidget):
     '''Widget to show a single task'''
     TASKWIDGETWIDTH = 400
@@ -168,11 +200,15 @@ class PriorityWidget(QtGui.QPushButton):
         super(PriorityWidget, self).__init__(parent)
         self.color = QtGui.QColor(247, 147, 30, 255)
         self.font = QtGui.QFont('Helvetica', 12, QtGui.QFont.Bold)
-        self.setToolTip('priority\n\nLMB to increase  -  RMB to decrease\nor\nalt+LMB drag to change value\nor\nMMB drag to change value\n\nmove mouse away after changing value to trigger re-sorting')
+        self.setToolTip('<b>priority</b><br>use either:<ul><li>LMB to increase  -  RMB to decrease</li><li>alt+LMB drag to change value</li><li>MMB drag to change value</li></ul><i>move mouse away after changing value<br>to trigger re-sorting</i>')
         self.active = False
+        self.mouseOver = False
         self.value = 0
         self.allowDrag = False
-        
+        self.indicator = DragIndicator(self)
+        self.indicator.setVisible(False)
+        self.indicator.move(0, 15)
+
     def setValue(self, value):
         self.value = value
         self.valueChanged.emit(self.value)
@@ -184,10 +220,19 @@ class PriorityWidget(QtGui.QPushButton):
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.RenderHint.HighQualityAntialiasing)
         painter.setFont(self.font)
-        if self.active or self.hasFocus():
+        
+        if self.mouseOver:
+            self.indicator.setVisible(True)
+        else:
+            self.indicator.setVisible(False)
+
+        if (self.active or self.hasFocus()) and not self.mouseOver:
             painter.setPen(self.color.lighter())
         else:
             painter.setPen(self.color)
+
+        painter.setPen(self.color)
+
      
         painter.drawText(self.rect(), QtCore.Qt.AlignCenter, str(self.value))
 
@@ -219,9 +264,11 @@ class PriorityWidget(QtGui.QPushButton):
         
     def enterEvent(self, event):
         self.active = True
+        self.mouseOver = True
 
     def leaveEvent(self, event):
         self.active = False
+        self.mouseOver = False
         self.clearFocus()
         self.allowSorting.emit()
     
@@ -271,7 +318,7 @@ class StatusWidgetPie(QtGui.QComboBox):
 class StatusWidgetBar(QtGui.QComboBox):
     def __init__(self, parent=None):
         super(StatusWidgetBar, self).__init__(parent)
-        self.setToolTip('status (click to edit)')
+        self.setToolTip('<b>status</b><br>click to edit')
         self.addItems(['waiting', 'in progress', 'finished'])
         self.active = False
         self.colWaiting = QtGui.QColor(180, 100, 10)
@@ -328,6 +375,7 @@ class DeleteWidget(QtGui.QPushButton):
         super(DeleteWidget, self).__init__(parent)
         self.size = QtCore.QSize(20, 20)
         self.setSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed)
+        self.setToolTip('permanently delete this task')
         self.padding = 7
         self.active = False
         self.inactiveColor = QtGui.QColor(180, 50, 0)
@@ -375,20 +423,24 @@ class MainWindow(QtGui.QWidget):
     '''GUI to show and edit multiple tasks'''
     appName = 'com.ohufx.ToDoList'
     def __init__(self, parent=None):
-        self.checkInstances()
+        self._closeRunningInstances()
         super(MainWindow, self).__init__(parent)
 
         self.setObjectName(self.appName)
         self.setWindowTitle('To Do List')
-        self.animGroupsDeleted = [] # HOLD ANIMATIONS FOR DELETED WIDGETS - REQUIRED FOR OVERLAPPING DELETE ACTIONS
         self.inNuke = inNuke()
         self.inHiero = inHiero()
+        self.animGroupsDeleted = [] # HOLD ANIMATIONS FOR DELETED WIDGETS - REQUIRED FOR OVERLAPPING DELETE ACTIONS
         self.settingsFile = ''
+        self.warningText = ''
         self.setSettingsFile()
         self.taskStore = TaskStore(self.settingsFile)
         self.setupUI()
         self.loadSettings()
         self.controller()
+
+    def __str__(self):
+        return 'OHUfx ToDoList Widget'
 
 
 
@@ -398,11 +450,10 @@ class MainWindow(QtGui.QWidget):
         self.setLayout(mainLayout)
         self.buttonLayout = QtGui.QHBoxLayout()
         self.msg = QtGui.QLabel()
-        self.msg.setText('<b>The project file has not been saved yet. Please save first before using this panel.</b>')
-        
+
         self.addTaskButton = QtGui.QPushButton('Add Task')
         self.addTaskButton.setToolTip('Add a new task to the list')
-        self.sortButton = QtGui.QPushButton('Sort by Priority')
+        self.sortButton = QtGui.QPushButton('Reverse Sorting')
         self.sortButton.setCheckable(True)
         self.sortButton.setToolTip('Push to sort so highest priorities are at the top,\notherwise lowest will be at the top.')
         self.helpButton = QtGui.QPushButton('?')
@@ -431,47 +482,28 @@ class MainWindow(QtGui.QWidget):
         self.layout().addWidget(self.scrollArea)
         self.taskWidgets = [TaskWidget(t, self.taskContainer) for t in self.taskStore.tasks]
         #self.update()
-    
-    def checkInstances(self):
-        '''Check if other instances are already runnign and close them before proceding.'''
-        
-        for widget in QtGui.QApplication.allWidgets():
-            name = widget.objectName()
-            if type(widget) == type(self):
-                p = widget.parentWidget()
-                while p:
-                    if p.parent() and isinstance(p.parent(), QtGui.QStackedWidget):
-                        p.parent().removeWidget(p) # THIS ASSUMES NUKE'S QSTACKEDWIDGET HOLDING THIS WIDGET
-                        p=None
-                    else:
-                        p = p.parentWidget()
 
-
-    def __helpText(self):
-        return '''
-        Written by Frank Rueter|OHUfx
-        
-        This is a simple to-do list that saves itself with the Nuke script or Hiero project to help organise
-        your own work as well as help others who might pick up a shot/project from you.
-        
-        Use LMB and RMB to change priorities to sort the list accordingly.
-        You can also use MMB+drag or alt+LMB drag to change a task's priority.
-        
-        Change the status and hide finished tasks to keep an overview over your work load.
-        
-        The "Copy To Clipboard" button puts a neatly formatted version of the current tasks into the clipboard for use in email or other text documents.
-        
-        Click the help button to open the respective nukepedia page.
-        '''
-    
     def setSettingsFile(self):
         '''get the path to the xml file to read/write settings'''
         if self.inNuke:
             import nuke
-            if nukeSetup():
-                self.settingsFile =  nuke.root()['todoSettingsFile'].value()
-                print 'using settings file:', self.settingsFile
+            try:
+                if nukeSetup():
+                    # got nuke root successfully and script has been saved, so I can build path for settings file
+                    self.settingsFile =  nuke.root()['todoSettingsFile'].value()
+                    print 'using settings file:', self.settingsFile
+                else:
+                    # do nothing. with no settings file set, the widget will deactivate themselve and display a warning that script needs to be saved first
+                    pass
+            except NukeError:
+                # something went wrong, mostlikely NUke's bloody "ValueError: A PythonObject is not attached to a node"
+                # this shouldn't be needed if it weren't for the above bug
+                print 'poop'
+                self.warningText = '<b>Oops, you have run into a little Nuke bug. Please close this panel and re-open it and everythign will be groovy'
+                
         elif self.inHiero:
+            # HIERO SUPPORT IS NOT FINISHED DUE TO LACK OF REQUIERED EVENT TYPES IN HIERO
+            raise NotImplementedError
             import hiero.core
             if hieroSetup():
                 self.settingsFile = [tag.metadata().value('tag.settingsFile') for tag in hiero.core.findProjectTags() if tag.name() == 'ohufx.ToDoList'][0]
@@ -623,6 +655,15 @@ class MainWindow(QtGui.QWidget):
             # IF NO SETTINGS FILE HAS BEEN SET BY NOW, DISABLE ALL WIDGETS AND DISPLAY A MESSAGE IN THE PANEL
             if not self.settingsFile:
                 self.disableWidget()
+                if not self.warningText:
+                    # this should only happen when the nuke script has not been saved yet
+                    self.warningText = '<b>The project file has not been saved yet. Please save first before using this panel.</b>'
+                else:
+                    # this should only happen when a script is loaded with it's layout containing the widget,
+                    # in which case self.setSettingsFile() will already have set the warning message.
+                    # once that bug is fixed we shld be able to get rid of this bit
+                    pass
+                self.msg.setText(self.warningText) 
                 self.msg.setHidden(False)
             else:
                 self.msg.setHidden(True)
@@ -675,6 +716,38 @@ class MainWindow(QtGui.QWidget):
 
 
 
+    def __helpText(self):
+        return '''
+        <b>Written by Frank Rueter|OHUfx</b>
+        <p>
+        This is a simple to-do list that saves itself with the Nuke script or Hiero project to help organise
+        your own work as well as help others who might pick up a shot/project from you.
+        </p>
+        <p>
+        Use LMB and RMB to change priorities to sort the list accordingly.
+        You can also use MMB+drag or alt+LMB drag to change a task's priority.
+        </p>
+        Change the status and hide finished tasks to keep an overview over your work load.
+        <p>
+        The "Copy To Clipboard" button puts a neatly formatted version of the current tasks into the clipboard for use in email or other text documents.
+        </p>
+        <b>Click the help button to open the respective nukepedia page.</b>
+        '''
+
+    def _closeRunningInstances(self):
+        '''Check if other instances are already runnign and close them before proceding.'''
+        
+        for widget in QtGui.QApplication.allWidgets():
+            name = widget.objectName()
+            if type(widget) == type(self):
+                p = widget.parentWidget()
+                while p:
+                    if p.parent() and isinstance(p.parent(), QtGui.QStackedWidget):
+                        p.parent().removeWidget(p) # THIS ASSUMES NUKE'S QSTACKEDWIDGET HOLDING THIS WIDGET
+                        p = None
+                    else:
+                        p = p.parentWidget()
+
 
 def launchWebsite():
     import webbrowser
@@ -692,10 +765,19 @@ def inHiero():
     '''Return True if this is run from inside of Hiero, else return False'''
     return 'Hiero' in QtGui.QApplication.applicationName()
 
+def findAndReload():
+    '''find MainWindow amongst all Nuke widgets and reload'''
+    print 'loading panel'
+    for widget in QtGui.QApplication.allWidgets():
+        if str(widget) == 'OHUfx ToDoList Widget':
+            widget.resetPanel()
+
 def registerNukePanel():
     '''Register widget as a Nuke panel'''
+    import nuke
     import nukescripts
     nukescripts.registerWidgetAsPanel('ToDoList.MainWindow', 'To Do List', MainWindow.appName)
+    nuke.addOnScriptSave(findAndReload)
 
 def registerHieroPanel():
     '''Register widget as a Hiero panel'''
@@ -710,12 +792,19 @@ def nukeSetup():
     Aborts and returns False if Nuke script hasn't been saved.
     '''
     import nuke
-    root = nuke.root()
-    if 'To Do List' not in root.knobs():
-        scriptPath = root.name()
+    try:
+        root = nuke.root()
+        rootKnobs = root.knobs()
+        rootName = root.name()
+    except ValueError, e:
+        if e.message == 'A PythonObject is not attached to a node':
+            raise NukeError
+        # we should never get this far so let's raise an error in case we do
+        raise e
+
+    if 'To Do List' not in rootKnobs:
+        scriptPath = rootName
         if scriptPath == 'Root':
-            # DO SOMETHING USEFUL WHEN SCRIPT HASN'T BEEN SAVED YET
-            #nuke.message('Please save the nuke script before using the To Do List\n(so the list\'s settings can be saved accordingly)')
             return False
         print 'adding user knobs in script settings'
         tab = nuke.Tab_Knob('To Do List')
@@ -729,9 +818,11 @@ def nukeSetup():
 
 def hieroSetup():
     '''
+    NOT YET SUPPORTED - NEED TO RE-IMLPEMENT AFTER RECTIFYING SOME CONFUSION/BUGS
     Set up Hiero tags in the current project to keep track of the settings file.
     Aborts and returns False if Hiero project hasn't been saved.
     '''
+    raise NotImplementedError
     tagName = 'ohufx.ToDoList'
     import hiero
 
@@ -774,7 +865,7 @@ def hieroSetup():
 
 
 if __name__ == '__main__':
-    #### STANDALONE
+    #### STANDALONE FOR DEBUGGING
     import sys
     app = QtGui.QApplication([])
     p = MainWindow()
