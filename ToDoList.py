@@ -214,7 +214,7 @@ class TaskWidget(QtGui.QWidget):
         else:
             super(TaskWidget, self).keyPressEvent(event)
 
-class PriorityWidget(QtGui.QPushButton):
+class PriorityWidget(QtGui.QLabel):
     valueChanged = QtCore.Signal(int)
     allowSorting = QtCore.Signal()
 
@@ -227,9 +227,13 @@ class PriorityWidget(QtGui.QPushButton):
         self.mouseOver = False
         self.value = 0
         self.allowDrag = False
+        self.setFocusPolicy(QtCore.Qt.TabFocus)
         self.indicator = DragIndicator(self)
         self.indicator.setVisible(False)
         self.indicator.move(0, 15)
+
+    def minimumSizeHint(self):
+        return (QtCore.QSize(25,25))
 
     def setValue(self, value):
         self.value = value
