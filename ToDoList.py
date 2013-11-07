@@ -209,8 +209,10 @@ class TaskWidget(QtGui.QWidget):
         '''send newTaskSignal if shit+return is pressed'''
         
         if event.key() == QtCore.Qt.Key_Return and (event.modifiers() & QtCore.Qt.ShiftModifier):
+            print 'doing stuff'
             self.newTaskSignal.emit()
-            return True
+        else:
+            super(TaskWidget, self).keyPressEvent(event)
 
 class PriorityWidget(QtGui.QPushButton):
     valueChanged = QtCore.Signal(int)
@@ -259,8 +261,10 @@ class PriorityWidget(QtGui.QPushButton):
         '''add arrow keys as means to change value'''
         if event.key() in (QtCore.Qt.Key_Left, QtCore.Qt.Key_Down):
             self.setValue(self.value - 1)
-        if event.key() in (QtCore.Qt.Key_Right, QtCore.Qt.Key_Up):
+        elif event.key() in (QtCore.Qt.Key_Right, QtCore.Qt.Key_Up):
             self.setValue(self.value + 1)
+        else:
+            super(PriorityWidget, self).keyPressEvent(event)
 
     def mousePressEvent(self, event):
         if ((event.modifiers() == QtCore.Qt.AltModifier) and (event.button() == QtCore.Qt.MouseButton.LeftButton)) or\
