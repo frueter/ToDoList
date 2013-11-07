@@ -160,6 +160,7 @@ class TaskWidget(QtGui.QWidget):
     TASKWIDGETWIDTH = 400
     TASKWIDGETHEIGHT = 40
     TASKWIDGETSPACING = 1.05
+    newTaskSignal = QtCore.Signal()
 
     def __init__(self, task, parent=None):
         super(TaskWidget, self).__init__(parent)
@@ -204,6 +205,12 @@ class TaskWidget(QtGui.QWidget):
             self.raise_()
 
         return QtCore.QPoint(x, y)
+    def keyPressEvent(self, event):
+        '''send newTaskSignal if shit+return is pressed'''
+        
+        if event.key() == QtCore.Qt.Key_Return and (event.modifiers() & QtCore.Qt.ShiftModifier):
+            self.newTaskSignal.emit()
+            return True
 
 class PriorityWidget(QtGui.QPushButton):
     valueChanged = QtCore.Signal(int)
@@ -683,6 +690,7 @@ class MainWindow(QtGui.QWidget):
         taskWidget.deleteWidget.clicked.connect(self.update)
         taskWidget.deleteWidget.clicked.connect(self.deleteTask)
         taskWidget.deleteWidget.clicked.connect(self.saveSettingsAndTasks)
+        taskWidget.newTaskSignal.connect(self.onAddTask)
 
     def resizeEvent(self, event):
         self.update()
@@ -847,8 +855,8 @@ def nukeSetup():
         root = nuke.root()
         rootKnobs = root.knobs()
         rootName = root.name()
-    except ValueError, e:
-        if e.message == 'A PythonObject is not attached to a node':
+    except ValueError as e:
+        if e == 'A PythonObject is not attached to a node':
             raise NukeError
         # we should never get this far so let's raise an error in case we do
         raise e
