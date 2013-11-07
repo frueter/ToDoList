@@ -510,7 +510,6 @@ class MainWindow(QtGui.QWidget):
         self.scrollArea = QtGui.QScrollArea()
         self.scrollArea.setWidget(self.taskContainer)
         self.layout().addWidget(self.scrollArea)
-        
         ## END OF NAUGHTY CODE
 
         self.taskWidgets = [TaskWidget(t, self.taskContainer) for t in self.taskStore.tasks]
@@ -535,12 +534,12 @@ class MainWindow(QtGui.QWidget):
 
         # CREATE NEW TASK WIDGETS AND CONNECT THEIR SIGNALS
         self.createTaskWidgets()
-        for w in self.taskWidgets:
-            print "new widget's parent was:", w.parentWidget()
 
         for tw in self.taskWidgets:
             self.connectTaskWidgetSignals(tw)
-
+        
+        self.setEnabledState()
+        self.applyFilterAndSorting()
         self.update()
 
     def setSettingsFile(self):
@@ -696,35 +695,44 @@ class MainWindow(QtGui.QWidget):
         self.update()
         
     def showEvent(self, event):
+        self.setEnabledState()
+
+    def setEnabledState(self):
+        '''disable or enable the UI depending on whether settings file was found'''
         if self.inNuke or self.inHiero:
             # IF NO SETTINGS FILE HAS BEEN SET BY NOW, DISABLE ALL WIDGETS AND DISPLAY A MESSAGE IN THE PANEL
+            print 'settings file is:', self.settingsFile
             if not self.settingsFile:
-                self.disableWidget()
+                self.disableWidget(True)
                 if not self.warningText:
                     # this should only happen when the nuke script has not been saved yet
                     self.warningText = '<b>The project file has not been saved yet. Please save first before using this panel.</b>'
                 else:
                     # this should only happen when a script is loaded with it's layout containing the widget,
                     # in which case self.setSettingsFile() will already have set the warning message.
-                    # once that bug is fixed we shld be able to get rid of this bit
+                    # once that bug is fixed we should be able to get rid of this bit
                     pass
                 self.msg.setText(self.warningText) 
                 self.msg.setHidden(False)
             else:
                 self.msg.setHidden(True)
+                self.disableWidget(False)
         else:
             # STANDALONE FOR DEBUGGING- NOTHING WILL BE SAVED - FOR DEBUG ONLY
             pass
 
-    def disableWidget(self):
-        '''Disable all child widgets and display a message to ask user to save script/project'''
+    def disableWidget(self, disable=True):
+        '''
+        If disable=True, disable all child widgets and display a message to ask user to save script/project.
+        If disable=False, enable all child widgets and hide the warning message
+        '''
         for w in self.children():
             try:
                 if w is not self.msg:
-                    w.setDisabled(True)
+                    w.setDisabled(disable)
 
             except AttributeError:
-                # widget is layout and has no setDiablsed method
+                # widget is layout and has no setDiabled method
                 pass
 
 
