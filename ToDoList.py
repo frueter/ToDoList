@@ -56,9 +56,20 @@ class TaskStore(QtCore.QObject):
     
     def __init__(self, tasksFile):
         super(TaskStore, self).__init__()
-        self.tasksFile = tasksFile
-        self.tasks = self.loadTasks()
+        self.initStore(tasksFile)
+        
+    def initStore(self, tasksFile):
+        '''initialise the task store making sure all tasks are prepared the way we need them'''
+        
+        print 'initialising store'
+        self.setTasksFile(tasksFile)
+        self.loadTasks()
         self.resetTasks()
+        
+    def setTasksFile(self, tasksFile):
+        '''set the file that holds the task data'''
+        
+        self.tasksFile = tasksFile
 
     def addTask(self):
         '''Insert a new task into the task store'''
@@ -90,10 +101,11 @@ class TaskStore(QtCore.QObject):
                             priority=int(te.findtext('priority')),
                             status=int(te.findtext('status')))
                 taskList.append(task)
-            return taskList
         else:
             # NO SETTINGS FILE FOUND
-            return [Task()]
+            taskList = [Task()]
+        
+        self.tasks = taskList
 
     def resetTasks(self):
         '''Assign an index from 1..n to all tasks in the store'''
@@ -177,6 +189,7 @@ class TaskWidget(QtGui.QWidget):
 
     def getNewPosition(self):
         '''Return the position of this task widget according to the index of its task'''
+
         x = 0        
         if self.task.index >= 0:
             # VISIBLE WIDGETS MOVE UP TO FILL SPACE
@@ -446,6 +459,7 @@ class MainWindow(QtGui.QWidget):
 
     def setupUI(self):
         self.resize(300, 600)
+        print '---- setupUI: ----'
         mainLayout = QtGui.QVBoxLayout()
         self.setLayout(mainLayout)
         self.buttonLayout = QtGui.QHBoxLayout()
@@ -480,8 +494,54 @@ class MainWindow(QtGui.QWidget):
         self.scrollArea = QtGui.QScrollArea()
         self.scrollArea.setWidget(self.taskContainer)
         self.layout().addWidget(self.scrollArea)
+        self.createTaskWidgets()
+        self.update()
+
+    def createTaskWidgets(self):
+        '''Create one task widget for every task found in current task store'''
+
+        ## START OF NAUGHTY CODE
+        # DELETE TASK CONTAINER AND SCROLL AREA SO WE CAN RE-CREATE THEM
+        # FOR SOME REASON RE-USING THE EXISTING ONES DOES NOT SHOW THE TASK WIDGETS
+        self.taskContainer.deleteLater()
+        self.scrollArea.deleteLater()
+        
+        self.taskContainer = QtGui.QWidget()
+        self.scrollArea = QtGui.QScrollArea()
+        self.scrollArea.setWidget(self.taskContainer)
+        self.layout().addWidget(self.scrollArea)
+        
+        ## END OF NAUGHTY CODE
+
         self.taskWidgets = [TaskWidget(t, self.taskContainer) for t in self.taskStore.tasks]
-        #self.update()
+        self.update()
+
+    def rebuildTaskWidgets(self):
+        '''Reset all task data, get settings file and re-build task widgets accordingly'''
+
+        # DELETE OLD TASK WIDGETS AND CLEAR INTERNAL LIST
+        for oldWidget in self.taskWidgets:
+            oldWidget.deleteLater()
+        self.taskWidgets = []
+        
+        # GET NEW SETTINGS FILE
+        self.setSettingsFile()
+        
+        # RE-INIT TASK STORE WITH NEW TASK SETTINGS
+        self.taskStore.initStore(self.settingsFile)
+
+        # LOAD PANEL SETTINGS
+        self.loadSettings()
+
+        # CREATE NEW TASK WIDGETS AND CONNECT THEIR SIGNALS
+        self.createTaskWidgets()
+        for w in self.taskWidgets:
+            print "new widget's parent was:", w.parentWidget()
+
+        for tw in self.taskWidgets:
+            self.connectTaskWidgetSignals(tw)
+
+        self.update()
 
     def setSettingsFile(self):
         '''get the path to the xml file to read/write settings'''
@@ -634,21 +694,6 @@ class MainWindow(QtGui.QWidget):
 
     def resizeEvent(self, event):
         self.update()
-
-    def closeEventHOLD(self, event):
-        '''Store tasks and settings to disk before exising the app'''
-
-        if self.settingsFile:
-            self.saveSettingsAndTasks()
-
-    def hideEventHOLD(self, event):
-        '''
-        Store tasks and settings to disk before exising the app.
-        This event is triggered when a registered panel in Nuke is "closed" in which case the closeEvent is not called in
-        '''
-
-        if self.settingsFile:
-            self.saveSettingsAndTasks()
         
     def showEvent(self, event):
         if self.inNuke or self.inHiero:
@@ -686,6 +731,7 @@ class MainWindow(QtGui.QWidget):
     def update(self):
         '''Animate the view to match sorting and filtering requests'''
 
+
         self.deletedTaskWidgets = [tw for tw in self.taskWidgets if tw.task.index == -2]
         taskWidgetsHeight = len(self.taskWidgets) * (TaskWidget.TASKWIDGETHEIGHT * TaskWidget.TASKWIDGETSPACING)
         self.taskContainer.resize(self.scrollArea.width() - 20, max(taskWidgetsHeight, self.scrollArea.height()))
@@ -698,7 +744,7 @@ class MainWindow(QtGui.QWidget):
             moveAnimation = QtCore.QPropertyAnimation(taskWidget, 'pos')
             moveAnimation.setDuration(1000)
             moveAnimation.setStartValue(taskWidget.pos())
-            moveAnimation.setEndValue(taskWidget.getNewPosition())
+            moveAnimation.setEndValue(taskWidget.getNewPosition())           
 
             if taskWidget.task.index == -2:
                 # DELETED WIDGET
@@ -708,12 +754,13 @@ class MainWindow(QtGui.QWidget):
                 moveAnimation.setEasingCurve(QtCore.QEasingCurve.OutCubic)
                 self.animGroup.addAnimation(moveAnimation)
             taskWidget.update()
-
+        # GO
         self.animGroup.start()
+        
+        # OVERLAP ANIMNATION FOR DELETED WIDGETS IN CASE OF RAPID TASK DELETION
         if animGroupForDeletedWidget.animationCount():
             self.animGroupsDeleted.append(animGroupForDeletedWidget)
             animGroupForDeletedWidget.start()
-
 
 
     def __helpText(self):
@@ -770,7 +817,7 @@ def findAndReload():
     print 'loading panel'
     for widget in QtGui.QApplication.allWidgets():
         if str(widget) == 'OHUfx ToDoList Widget':
-            widget.resetPanel()
+            widget.rebuildTaskWidgets()
 
 def registerNukePanel():
     '''Register widget as a Nuke panel'''
