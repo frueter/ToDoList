@@ -247,14 +247,20 @@ class PriorityWidget(QtGui.QPushButton):
             self.indicator.setVisible(False)
 
         if (self.active or self.hasFocus()) and not self.mouseOver:
+            # when keyboard has shifted focus onto this widget
             painter.setPen(self.color.lighter())
+
         else:
             painter.setPen(self.color)
 
-        painter.setPen(self.color)
-
-     
         painter.drawText(self.rect(), QtCore.Qt.AlignCenter, str(self.value))
+
+    def keyPressEvent(self, event):
+        '''add arrow keys as means to change value'''
+        if event.key() in (QtCore.Qt.Key_Left, QtCore.Qt.Key_Down):
+            self.setValue(self.value - 1)
+        if event.key() in (QtCore.Qt.Key_Right, QtCore.Qt.Key_Up):
+            self.setValue(self.value + 1)
 
     def mousePressEvent(self, event):
         if ((event.modifiers() == QtCore.Qt.AltModifier) and (event.button() == QtCore.Qt.MouseButton.LeftButton)) or\
