@@ -233,7 +233,7 @@ class PriorityWidget(QtGui.QLabel):
         self.indicator.move(0, 15)
 
     def minimumSizeHint(self):
-        return (QtCore.QSize(25,25))
+        return (QtCore.QSize(50,25))
 
     def setValue(self, value):
         self.value = value
@@ -297,6 +297,7 @@ class PriorityWidget(QtGui.QLabel):
     def enterEvent(self, event):
         self.active = True
         self.mouseOver = True
+        self.update()
 
     def leaveEvent(self, event):
         self.active = False
