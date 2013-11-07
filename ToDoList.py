@@ -61,7 +61,7 @@ class TaskStore(QtCore.QObject):
     def initStore(self, tasksFile):
         '''initialise the task store making sure all tasks are prepared the way we need them'''
         
-        print 'initialising store'
+        #print 'initialising store'
         self.setTasksFile(tasksFile)
         self.loadTasks()
         self.resetTasks()
@@ -252,7 +252,6 @@ class PriorityWidget(QtGui.QPushButton):
     def mousePressEvent(self, event):
         if ((event.modifiers() == QtCore.Qt.AltModifier) and (event.button() == QtCore.Qt.MouseButton.LeftButton)) or\
            (event.button() == QtCore.Qt.MouseButton.MiddleButton):
-            print 'allowing drag'
             self.allowDrag = True
             self.clickPosition = event.pos()
             self.oldValue = self.value
@@ -266,7 +265,6 @@ class PriorityWidget(QtGui.QPushButton):
 
     def mouseMoveEvent(self, event):
         if self.allowDrag:
-            print 'changing value'
             newValue = self.oldValue + (event.pos().x() - self.clickPosition.x()) / 50
             self.setValue(newValue)
             self.valueChanged.emit(newValue)
@@ -458,8 +456,6 @@ class MainWindow(QtGui.QWidget):
 
 
     def setupUI(self):
-        self.resize(300, 600)
-        print '---- setupUI: ----'
         mainLayout = QtGui.QVBoxLayout()
         self.setLayout(mainLayout)
         self.buttonLayout = QtGui.QHBoxLayout()
@@ -550,14 +546,12 @@ class MainWindow(QtGui.QWidget):
                 if nukeSetup():
                     # got nuke root successfully and script has been saved, so I can build path for settings file
                     self.settingsFile =  nuke.root()['todoSettingsFile'].value()
-                    print 'using settings file:', self.settingsFile
                 else:
                     # do nothing. with no settings file set, the widget will deactivate themselve and display a warning that script needs to be saved first
                     pass
             except NukeError:
                 # something went wrong, mostlikely NUke's bloody "ValueError: A PythonObject is not attached to a node"
                 # this shouldn't be needed if it weren't for the above bug
-                print 'poop'
                 self.warningText = '<b>Oops, you have run into a little Nuke bug. Please close this panel and re-open it and everythign will be groovy'
                 
         elif self.inHiero:
@@ -566,7 +560,6 @@ class MainWindow(QtGui.QWidget):
             import hiero.core
             if hieroSetup():
                 self.settingsFile = [tag.metadata().value('tag.settingsFile') for tag in hiero.core.findProjectTags() if tag.name() == 'ohufx.ToDoList'][0]
-                print 'using settings file:', self.settingsFile
         else:
             self.settingsFile = None
 
@@ -701,7 +694,6 @@ class MainWindow(QtGui.QWidget):
         '''disable or enable the UI depending on whether settings file was found'''
         if self.inNuke or self.inHiero:
             # IF NO SETTINGS FILE HAS BEEN SET BY NOW, DISABLE ALL WIDGETS AND DISPLAY A MESSAGE IN THE PANEL
-            print 'settings file is:', self.settingsFile
             if not self.settingsFile:
                 self.disableWidget(True)
                 if not self.warningText:
@@ -821,14 +813,18 @@ def inHiero():
     return 'Hiero' in QtGui.QApplication.applicationName()
 
 def findAndReload():
-    '''find MainWindow amongst all Nuke widgets and reload'''
-    print 'loading panel'
+    '''
+    find MainWindow amongst all Nuke widgets and reload unless widget already has a settings file
+    This is for nuke's onScriptSaveCallback for cases where the widget was first called in a deactivaed state (from an unsaved nuke script)
+    and is then saved while the widget is visible
+    '''
     for widget in QtGui.QApplication.allWidgets():
         if str(widget) == 'OHUfx ToDoList Widget':
-            widget.rebuildTaskWidgets()
+            if not widget.settingsFile:
+                widget.rebuildTaskWidgets()
 
 def registerNukePanel():
-    '''Register widget as a Nuke panel'''
+    '''Register widget as a Nuke panel and add callback for saveing scripts'''
     import nuke
     import nukescripts
     nukescripts.registerWidgetAsPanel('ToDoList.MainWindow', 'To Do List', MainWindow.appName)
