@@ -866,7 +866,7 @@ def nukeSetup():
         rootKnobs = root.knobs()
         rootName = root.name()
     except ValueError as e:
-        if e == 'A PythonObject is not attached to a node':
+        if e.message == 'A PythonObject is not attached to a node':
             raise NukeError
         # we should never get this far so let's raise an error in case we do
         raise e
