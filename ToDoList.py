@@ -304,6 +304,8 @@ class PriorityWidget(QtGui.QLabel):
         self.clearFocus()
         self.allowSorting.emit()
     
+    def focusOutEvent(self, event):
+        self.allowSorting.emit()
 
 class StatusWidgetPie(QtGui.QComboBox):
     def __init__(self, parent=None):
