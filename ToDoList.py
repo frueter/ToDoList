@@ -823,7 +823,7 @@ class MainWindow(QtGui.QWidget):
 
 def launchWebsite():
     import webbrowser
-    webbrowser.open('http://www.nukepedia.com/python/ui/ToDoPanel')
+    webbrowser.open('http://www.nukepedia.com/python/ui/todolist')
 
 def settingsPathFromProject(projectFile):
     '''return the path for the settings file based on projectFile'''
