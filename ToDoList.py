@@ -5,16 +5,6 @@ from xml.etree import ElementTree as ET
 from PySide import QtGui, QtCore, QtNetwork
 
 ## written by Frank Rueter with (lots of) help from Aaron Richiger
-# DONE SINCE LAST CHECK IN:
-#  - added drag indicator to PriorityWidget
-#  - polished tooltips
-#  - added warning message for Nuke bug when script tries to restore panel upon being lodaed
-#  - adding __str__ to identify panel to remote-load it via nuke.onScriptSave callback
-
-# TO DO:
-#    -implement Hiero integration (currently missing some Hiero signals in 1.8 to do this)
-#    -add callback to enable todo list when nuke script is saved
-#    -help icon with tooltip and link to nukepedia url
 
 
 class NukeError(Exception):
@@ -714,6 +704,20 @@ class MainWindow(QtGui.QWidget):
         
     def showEvent(self, event):
         self.setEnabledState()
+    def showEvent(self, event):
+        '''Get rid of that unnecessary space around the widget when registering this widget as a nuke panel'''
+        p = self
+        while True:
+            parentWidget = p.parentWidget()
+            #print parentWidget
+            #print parentWidget.layout()
+            try:
+                parentWidget.layout().setContentsMargins(0,0,0,0)
+            except:
+                break
+            p = parentWidget
+        super(MainWindow, self).showEvent(event)
+
 
     def setEnabledState(self):
         '''disable or enable the UI depending on whether settings file was found'''
@@ -808,12 +812,13 @@ class MainWindow(QtGui.QWidget):
 
     def _closeRunningInstances(self):
         '''Check if other instances are already runnign and close them before proceding.'''
-        
+
         for widget in QtGui.QApplication.allWidgets():
             name = widget.objectName()
             if type(widget) == type(self):
                 p = widget.parentWidget()
                 while p:
+                    print p.parent
                     if p.parent() and isinstance(p.parent(), QtGui.QStackedWidget):
                         p.parent().removeWidget(p) # THIS ASSUMES NUKE'S QSTACKEDWIDGET HOLDING THIS WIDGET
                         p = None
